@@ -46,9 +46,13 @@ function translateOneRequestPerFewWords(words, prefs, callback) {
   var concatWordsArray = {};
   var cWALength = 1;
   //THIS ALL NEEDS TO BE FIXED LATER.
+  // This bunches the sentences up and sends them to google translate
+  // and it uses "." as it's splitter. which is really bad for our new technique.
+  // don't do that. split on | or something instead. "." really isn't too bad, but still.
+  // we also never
   for (word in words) {
     //console.debug("word: " + word);
-    concatWords += word + ". "  ;
+    concatWords += encodeURIComponent(word + ". ");
     //console.debug("concatWords: " + concatWords);
     concatWordsArray[cWALength] = concatWords;
     length += encodeURIComponent(word + ". ").length;
@@ -79,7 +83,7 @@ function translateORPFWRec(concatWordsArray, index, length, tMap, prefs, callbac
           var orig = r.sentences[i].orig;
           var origT = orig.substring(0,orig.length - 1);
 	  var trans = r.sentences[i].trans;
-          var transT = trans.replace(/[.\u3002]/,""); // removes punctuation
+          var transT = trans.replace(".",""); // removes punctuation
           tMap[origT] = transT;
         }
         translateORPFWRec(concatWordsArray, index + 1, length, tMap, prefs, callback);
