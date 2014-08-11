@@ -1,10 +1,14 @@
 // Copyright (c) 2011-2013 Bruno Woltzenlogel Paleo. All rights reserved.
 // With a little help of these awesome guys, https://github.com/OiWorld/MindTheWord/graphs/contributors!
+NodeList.prototype.forEach = Array.prototype.forEach; 
 
 var sl, tl, customURLs;
 
+var cssClass = "mtwTranslatedWord";
+
 function insertCSS(cssStyle) {
-  document.styleSheets[0].insertRule("span.mtwTranslatedWord {" + cssStyle + "}", 0);
+  document.styleSheets[0].insertRule("span."+cssClass+".translated {" + cssStyle + "}", 0);
+  document.styleSheets[0].insertRule("span."+cssClass+".failure {background-color:rgba(100,0,0,0.3);}", 0);
   var s = document.createElement("script");
   s.setAttribute("src", customURLs[0]);
   document.getElementsByTagName("head")[0].appendChild(s);
@@ -16,81 +20,20 @@ function requestTranslations(sourceWords, callback) {
   });
 }
 
-function deepHTMLReplacement(node, tMap, iTMap){
-  var badTags = ['TEXTAREA', 'INPUT', 'SCRIPT', 'CODE', 'A'];
-  if (node.nodeType == Node.TEXT_NODE) {
-    var newNodeValue = replaceAll(node.nodeValue, tMap);
-    if (newNodeValue != node.nodeValue) {
-      node.nodeValue = newNodeValue;
-      var parent = node.parentNode;
-      parent.innerHTML = replaceAll(parent.innerHTML, iTMap);     
-    }
-  } else if (node.nodeType == Node.ELEMENT_NODE && !!badTags.indexOf(node.tagName)) {
-    var child = node.firstChild;
-    while (child){
-        deepHTMLReplacement(child,tMap,iTMap);
-        child = child.nextSibling;
-    }
-  }
-}
-
-// http://stackoverflow.com/questions/3446170/escape-string-for-use-in-javascript-regex
-function escapeRegExp(str) {
-  return str.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
-}
-
-// ToDo: This should be improved. The use of spaces is an ugly hack. 
-function replaceAll(text, translationMap) {
-  var rExp = "";
-  for (var sourceWord in translationMap) {
-    rExp += "(\\s" + escapeRegExp(sourceWord) + "\\s)|";
-  }
-  rExp = rExp.substring(0,rExp.length - 1);
-  var regExp = new RegExp(rExp,"gm");
-  var newText = text.replace(regExp, function (m) {
-    
-    if (translationMap[m.substring(1, m.length - 1)] !== null) {
-      return " " + translationMap[m.substring(1,m.length - 1)] + " ";
-    }
-    else {
-      return " " + m + " ";
-    }
-  });
-
-  return newText;
-}
-
-function invertMap(map) {
-  var iMap = {};
-  var swapJs = "javascript:__mindtheword.toggleElement(this)";
-  for (e in map) { 
-    iMap[map[e]] = '<span data-sl="'+ sl +'" data-tl="'+ tl +'" data-query="'+ e +
-	    '" data-original="' + e + '" data-translated="' + map[e] +
-	    '" class="mtwTranslatedWord" onClick="' + swapJs + '">' + map[e] + '</span>'; 
-  }
-  return iMap;
-}
-
-
-function containsIllegalCharacters(s) { return /[0-9{}.,;:]/.test(s); }
-
-function processTranslations(translationMap, userDefinedTMap) { 
-  var filteredTMap = {};
-  for (w in translationMap) {
-    if (w != translationMap[w] && translationMap[w] != "" && !userDefinedTMap[w] && !containsIllegalCharacters(translationMap[w])) {
-      filteredTMap[w] = translationMap[w];
-    }
-  }
-  for (w in userDefinedTMap) {
-    if (w != userDefinedTMap[w]) {
-      filteredTMap[w] = userDefinedTMap[w];
-    }
-  }
-  if (length(filteredTMap) != 0) {
-    paragraphs = document.getElementsByTagName('p');
-    for (var i=0; i<paragraphs.length; i++) {
-      deepHTMLReplacement(paragraphs[i], filteredTMap, invertMap(filteredTMap)); 
-    }
+function processTranslations(translationMap) { 
+  if (length(translationMap) != 0) {
+    var translationSpans = document.querySelectorAll("span."+cssClass);
+    translationSpans.forEach(function(span, index) {
+      var original = span.dataset.original;
+      if (original in translationMap) {
+        span.innerHTML = translationMap[original];
+        span.dataset.translated = translationMap[original];
+        span.className+= " translated";
+        span.onclick=function() { __mindtheword.toggleElement(this);};
+      } else {
+        span.className+= " failure";
+      }
+    });
   }
 }
 
@@ -101,11 +44,11 @@ function length(obj) {
 // More precise than the old one
 function filterSourceWords(countedWords, translationProbability, minimumSourceWordLength, userBlacklistedWords) {
   var userBlacklistedWords = new RegExp(userBlacklistedWords);
-
+  return countedWords;
   var countedWordsList = shuffle(toList(countedWords, function(word, count) {
     return !!word && word.length >= minimumSourceWordLength && // no words that are too short
 	  word != "" && !/\d/.test(word) && // no empty words
-	  word.charAt(0) != word.charAt(0).toUpperCase() && // no proper nouns
+	  //word.charAt(0) != word.charAt(0).toUpperCase() && // no proper nouns
 	  !userBlacklistedWords.test(word.toLowerCase()); // no blacklisted words
   }));
 
@@ -137,29 +80,67 @@ function shuffle(o) {
 }
 
 function getAllWords() {
-  var maxWords = 10000, ngramMin = 2, ngramMax = 3, wordCount = 0;
-  var countedWords = {};
-  paragraphs = document.getElementsByTagName('p');
+  var selection = {
+    maxChars: 100000,
+    charCount: 0,
+    minLength: 5,
+    minWords: 1,
+    countedSelection: {},
+    splitRegex: /[,\.\?\!]/g
+  };
+  var paragraphs = document.getElementsByTagName('p');
   console.log("Getting words from all "+paragraphs.length+" paragraphs");
-  for (var i=0; i<paragraphs.length; i++) {
-    var words = paragraphs[i].innerText.split(/\s|,|[.()]|\d/g);
-    for (var j=0; j<words.length; j++) {
-      for (var b=ngramMin; b <= ngramMax; b++) {
-        var word = ngramAt(words, j, b);
-        if (!(word in countedWords)) {
-          countedWords[word] = 0;
-          wordCount += 1;
+  for (var i=0; i<paragraphs.length && selection.charCount<selection.maxChars; i++) {
+    deepSelectText(paragraphs[i], selection);
+  }
+  console.log("Counted "+selection.charCount+" characters");
+  return selection.countedSelection;
+}
+
+function deepSelectText(node, selection) {
+  var badTags = ['TEXTAREA', 'INPUT', 'SCRIPT', 'CODE', 'A'];
+  if (node.nodeType == Node.TEXT_NODE) {
+    selectTextNode(node.nodeValue, node.parentNode, selection);
+  } else if (node.nodeType == Node.ELEMENT_NODE && !!badTags.indexOf(node.tagName)) {
+    var child = node.firstChild;
+    while (child){
+        if (selection.charCount > selection.maxChars) {
+          console.log("Too many chars! "+selection.charCount);
+          return;
         }
-        countedWords[word] += 1;
+        deepSelectText(child, selection);
+        child = child.nextSibling;
+    }
+  }
+}
+
+function selectTextNode(text, parent, selection) {
+  var phrases = text.split(selection.splitRegex);
+  var parentHtml = parent.innerHTML;
+  var phrasesInThisParagraph = {};
+  for (var i=0; i<phrases.length; i++) {
+    var phrase = sanitizeTextSelection(phrases[i]);
+    if (!!phrase && phrase.length > selection.minLength && phrase.split(" ").length > selection.minWords) {
+      if (!(phrase in selection.countedSelection)) {
+        selection.countedSelection[phrase] = 0;
+        selection.charCount += phrase.length;
+      }
+      selection.countedSelection[phrase] += 1;
+      if (!(phrase in phrasesInThisParagraph)) {
+        parentHtml = parentHtml.replace(phrase, getTranslationSpan(phrase));
+        phrasesInThisParagraph[phrase] = 1;
       }
     }
   }
-  console.log("Counted "+wordCount+" words");
-  return countedWords;
+  parent.innerHTML = parentHtml;
 }
 
-function ngramAt(list, index, ngram) {
-  return list.slice(index, index+ngram).join(" ");
+function sanitizeTextSelection(text) {
+  return text.trim().replace("\"", "\\\"");
+}
+
+function getTranslationSpan(text) {
+  return "<span class=\""+cssClass+"\" data-original=\""+text+"\">"+text+"</span>";
 }
 
 __mindtheword = new function() {
@@ -174,6 +155,11 @@ __mindtheword = new function() {
 	};
   this.isTranslated = function() {
     return this.translated;
+  };
+  this.toggleElement = function(elem) {
+    var word = elem.innerHTML;
+    var newword = (word == elem.dataset.translated) ? elem.dataset.original : elem.dataset.translated;
+          elem.innerHTML = newword;
   };
 };
 

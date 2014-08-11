@@ -45,7 +45,7 @@ function translateOneRequestPerFewWords(words, prefs, callback) {
   var maxLength = 800;
   var concatWordsArray = {};
   var cWALength = 1;
-
+  //THIS ALL NEEDS TO BE FIXED LATER.
   for (word in words) {
     //console.debug("word: " + word);
     concatWords += word + ". "  ;
