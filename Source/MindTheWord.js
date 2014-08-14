@@ -44,16 +44,13 @@ function length(obj) {
 // More precise than the old one
 function filterSourceWords(countedWords, translationProbability, minimumSourceWordLength, userBlacklistedWords) {
   var userBlacklistedWords = new RegExp(userBlacklistedWords);
-  return countedWords;
-  var countedWordsList = shuffle(toList(countedWords, function(word, count) {
-    return !!word && word.length >= minimumSourceWordLength && // no words that are too short
-	  word != "" && !/\d/.test(word) && // no empty words
-	  //word.charAt(0) != word.charAt(0).toUpperCase() && // no proper nouns
-	  !userBlacklistedWords.test(word.toLowerCase()); // no blacklisted words
-  }));
-
-  var targetLength = Math.floor((countedWordsList.length * translationProbability) / 100);
-  return toMap(countedWordsList.slice(0, targetLength - 1));
+  return toList(countedWords, function(word, count) {
+   //  return !!word && word.length >= minimumSourceWordLength && // no words that are too short
+	  // word != "" && !/\d/.test(word) && // no empty words
+	  // //word.charAt(0) != word.charAt(0).toUpperCase() && // no proper nouns
+	  // !userBlacklistedWords.test(word.toLowerCase()); // no blacklisted words
+    return true;
+  });
 }
 
 function toList(map, filter) {
@@ -79,14 +76,15 @@ function shuffle(o) {
   return o;
 }
 
-function getAllWords() {
+function getAllWords(translationProbability) {
   var selection = {
     maxChars: 100000,
     charCount: 0,
     minLength: 5,
     minWords: 1,
     countedSelection: {},
-    splitRegex: /[,\.\?\!]/g
+    splitRegex: /[,\.\?\!]/g,
+    translationProbability: translationProbability
   };
   var paragraphs = document.getElementsByTagName('p');
   console.log("Getting words from all "+paragraphs.length+" paragraphs");
@@ -120,7 +118,8 @@ function selectTextNode(text, parent, selection) {
   var phrasesInThisParagraph = {};
   for (var i=0; i<phrases.length; i++) {
     var phrase = sanitizeTextSelection(phrases[i]);
-    if (!!phrase && phrase.length > selection.minLength && phrase.split(" ").length > selection.minWords) {
+    if (shouldChooseTextNode(selection) &&
+        !!phrase && phrase.length > selection.minLength && phrase.split(" ").length > selection.minWords) {
       if (!(phrase in selection.countedSelection)) {
         selection.countedSelection[phrase] = 0;
         selection.charCount += phrase.length;
@@ -141,6 +140,10 @@ function sanitizeTextSelection(text) {
 
 function getTranslationSpan(text) {
   return "<span class=\""+cssClass+"\" data-original=\""+text+"\">"+text+"</span>";
+}
+
+function shouldChooseTextNode(selection) {
+  return Math.random()*100 < selection.translationProbability;
 }
 
 __mindtheword = new function() {
@@ -165,7 +168,7 @@ __mindtheword = new function() {
 
 function main(translationProbability, minimumSourceWordLength, userDefinedTranslations, userBlacklistedWords) {
   console.log('starting translation');
-  var countedWords = getAllWords();
+  var countedWords = getAllWords(translationProbability);
   console.log(countedWords);
   requestTranslations(filterSourceWords(countedWords, translationProbability, minimumSourceWordLength, userBlacklistedWords),
           function(tMap) {processTranslations(tMap, userDefinedTranslations);}); 

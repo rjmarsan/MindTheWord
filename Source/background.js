@@ -1,6 +1,12 @@
 console.log("Starting up MindTheWord background page");
 var storage = chrome.storage.sync;
 
+function test(phrases) {
+  translateOneRequestPerFewWords(phrases, {sourceLanguage: "en", targetLanguage: "es"}, function(translation) {
+    console.log(translation);
+  });
+}
+
 function initializeStorage() {
   storage.get("initialized", function(result) {
     if (!(result.initialized)) {
@@ -38,59 +44,51 @@ function googleTranslateURL(prefs) {
 }	
 
 
-function translateOneRequestPerFewWords(words, prefs, callback) {
-  //console.debug("words: " + JSON.stringify(words));
-  var concatWords = "";
-  var length = 0
-  var maxLength = 800;
-  var concatWordsArray = {};
-  var cWALength = 1;
-  //THIS ALL NEEDS TO BE FIXED LATER.
-  // This bunches the sentences up and sends them to google translate
-  // and it uses "." as it's splitter. which is really bad for our new technique.
-  // don't do that. split on | or something instead. "." really isn't too bad, but still.
-  // we also never
-  for (word in words) {
-    //console.debug("word: " + word);
-    concatWords += encodeURIComponent(word + ". ");
-    //console.debug("concatWords: " + concatWords);
-    concatWordsArray[cWALength] = concatWords;
-    length += encodeURIComponent(word + ". ").length;
-
-    if (length > maxLength) {
-      cWALength++;
-      concatWords = "";
-      length = 0;
+function translateOneRequestPerFewWords(phrases, prefs, callback) {
+  var translateRequests = [];
+  var maxLength = 2000;
+  var currentRequest = "";
+  phrases.forEach(function(phrase) {
+    var encodedPhrase = encodeURIComponent(phrase + ". . ");
+    if (currentRequest.length + encodedPhrase.length <= maxLength) {
+      currentRequest += encodedPhrase;
+    } else {
+      translateRequests.push(currentRequest);
+      currentRequest = encodedPhrase;
     }
-  }
-  var tMap = {};
-  translateORPFWRec(concatWordsArray, 1, cWALength, tMap, prefs, callback);
+  });
+  translateRequests.push(currentRequest);
+
+  translateORPFWRec(translateRequests.slice(0,4), prefs, callback);
 }
 
-function translateORPFWRec(concatWordsArray, index, length, tMap, prefs, callback) {
+function translateORPFWRec(concatWordsArray, prefs, callback) {
+  var tMap = {};
   console.log("translateORPFWRec");
-  console.debug("concatWordsArray: " + JSON.stringify(concatWordsArray));
-  console.debug("index: " + index +  "; length: " + length);
-  if (index > length) callback(tMap)
-  else { 
-    var url = googleTranslateURL(prefs) + concatWordsArray[index];
+  console.debug("concatWordsArray: ", concatWordsArray);
+  var finished = 0;
+  concatWordsArray.forEach(function(requestPhrases) {
+    var url = googleTranslateURL(prefs) + requestPhrases;
+    //console.log(url);
     var xhr = new XMLHttpRequest(); xhr.open("GET", url, true);
     xhr.onreadystatechange = function() {
       if (xhr.readyState == 4) {
         //alert(xhr.responseText);
+        //console.log(xhr.responseText);
         var r = JSON.parse(xhr.responseText);
-        for (i in r.sentences) {
-          var orig = r.sentences[i].orig;
-          var origT = orig.substring(0,orig.length - 1);
-	  var trans = r.sentences[i].trans;
-          var transT = trans.replace(".",""); // removes punctuation
-          tMap[origT] = transT;
+        r.sentences.forEach(function(sentence) {
+          var orig = sentence.orig.replace(/\./g, "").trim();
+          var trans = sentence.trans.replace(/\./g,"").trim(); // removes punctuation
+          tMap[orig] = trans;
+        });
+        finished += 1;
+        if (finished >= concatWordsArray.length) {
+          callback(tMap);
         }
-        translateORPFWRec(concatWordsArray, index + 1, length, tMap, prefs, callback);
       }
-    }
+    };
     xhr.send();
-  }
+  });
 }  	
 
 function onMessage(request, sender, sendResponse) {
